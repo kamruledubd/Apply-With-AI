@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,7 +68,22 @@ type ApiResponse = {
   };
 };
 
-const WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL as string;
+const submitApplication = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    if (!(data instanceof FormData)) {
+      throw new Error("Invalid form data");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const webhookUrl = process.env.N8N_WEBHOOK_URL;
+    if (!webhookUrl) {
+      throw new Error("Webhook URL is not configured");
+    }
+    const res = await fetch(webhookUrl, { method: "POST", body: data });
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+    return await res.text();
+  });
 
 function Index() {
   const [name, setName] = useState("");
@@ -84,10 +100,6 @@ function Index() {
       toast.error("Please upload your resume PDF");
       return;
     }
-    if (!WEBHOOK_URL) {
-      toast.error("Webhook URL is not configured");
-      return;
-    }
     setLoading(true);
     setResult(null);
     try {
@@ -98,9 +110,7 @@ function Index() {
       fd.append("job_description", jobDescription);
       if (jobImage) fd.append("job_image", jobImage);
 
-      const res = await fetch(WEBHOOK_URL, { method: "POST", body: fd });
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      const text = await res.text();
+      const text = await submitApplication({ data: fd });
       let data: ApiResponse;
       try {
         const parsed = JSON.parse(text);
